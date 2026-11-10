@@ -1,4 +1,4 @@
 requests
 paddlepaddle
-paddleocr
+paddleocr==2.8.1
 opencv-python-headless
