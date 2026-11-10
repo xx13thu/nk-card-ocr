@@ -94,23 +94,49 @@ def download_image(url):
 # === 替换为 PaddleOCR 版本的识别引擎 ===
 def paddle_ocr(image_url):
     try:
-        # 下载图片到内存
+        # 1. 下载图片到内存
         resp = requests.get(image_url, timeout=15)
         resp.raise_for_status()
         
-        # 将图片转为 OpenCV 格式供 Paddle 识别
         image_bytes = np.frombuffer(resp.content, np.uint8)
         img = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
         
-        # 获取宽高，计算排查区域 (排除上方80%和左侧20%)
+        # 2. 物理裁剪：保留下方 30%，左右全部保留
         h, w = img.shape[:2]
-        limit_y = h * 0.8
-        limit_x = w * 0.2
+        limit_y = int(h * 0.7)  # 从高度 70% 的位置开始，即保留底部的 30%
+        cropped_img = img[limit_y:h, :]  # 宽度方向用 ":" 表示全部保留
         
-        # 执行 OCR
-        result = ocr_engine.ocr(img, cls=True)
+        # 3. 放大图像：放大 2 倍
+        enlarged_img = cv2.resize(cropped_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         
-        # 核心修复：如果模型没找到任何文字，result[0] 会是 None
+        # 4. 灰度化：转为黑白
+        gray = cv2.cvtColor(enlarged_img, cv2.COLOR_BGR2GRAY)
+        
+        # 5. 图像锐化 (Sharpening)：极其关键，强化“亮字”与“浅底”之间那一点点微弱的边界
+        kernel = np.array([[-1, -1, -1],
+                           [-1,  9, -1],
+                           [-1, -1, -1]])
+        sharpened = cv2.filter2D(gray, -1, kernel)
+        
+        # 6. 自适应二值化 (Adaptive Thresholding)：拯救低对比度的终极杀手锏
+        # 它不看全局亮度，而是把图像切成无数个小块(blockSize)，只要字比周围一小圈的背景亮一点，就能强行剥离出来。
+        binary = cv2.adaptiveThreshold(
+            sharpened, 
+            255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 
+            31,  # 局部区域大小，必须是奇数。因为图像放大了2倍，这里用 31 或 41 比较合适
+            2    # 微调常数
+        )
+        
+        # 7. 颜色反转 (Inversion)：迎合 OCR 模型的喜好
+        # 经过上面的操作，亮字通常会变成纯白(255)，背景变纯黑(0)。
+        # 这里将其反转为“白底黑字”，让 PaddleOCR 发挥最高准确率。
+        enhanced_img = cv2.bitwise_not(binary)
+        
+        # 将处理后的终极黑白图像 enhanced_img 交给 PaddleOCR
+        result = ocr_engine.ocr(enhanced_img, cls=True)
+        
         if not result or result[0] is None:
             return "LowConf", ""
 
@@ -123,13 +149,9 @@ def paddle_ocr(image_url):
             text = text_info[0]
             conf = text_info[1]
 
-            # 计算文本框中心点坐标
+            # 计算 X 坐标中心点，用于判断字母/单词的左右顺序
             center_x = sum([p[0] for p in box]) / 4
-            center_y = sum([p[1] for p in box]) / 4
 
-            # 过滤不需要的区域和低置信度
-            if center_y < limit_y or center_x < limit_x:
-                continue
             if conf < 0.5: 
                 continue
 
@@ -137,14 +159,13 @@ def paddle_ocr(image_url):
             if not text:
                 continue
 
-            # 既然只需英文，强制剥离所有非英文字符
             if re.search(r"[A-Za-z]", text):
-                text = text.replace("l", "I") # 统一将小写 L 替换为大写 I，防混淆
+                text = text.replace("l", "I") 
                 clean_en = re.sub(r'[^a-zA-Z0-9]', '', text)
                 if clean_en and clean_en.upper() not in blacklist:
                     texts_en.append((clean_en, center_x))
 
-        # 整理输出：按 X 坐标排序，保证名字的前后顺序正确
+        # 整理输出：按 X 坐标排序拼接
         texts_en = list(dict.fromkeys(texts_en))
         if texts_en:
             texts_en.sort(key=lambda item: item[1])
@@ -154,7 +175,6 @@ def paddle_ocr(image_url):
         else:
             en_tag = "LowConf"
 
-        # 因为只需要英文，日文部分直接返回空字符串
         return en_tag, ""
 
     except Exception as e:
