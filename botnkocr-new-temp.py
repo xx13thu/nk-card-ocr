@@ -35,7 +35,7 @@ DEFAULT_TOPIC_ID = None
 # === 初始化 PaddleOCR (全局只初始化一次) ===
 # lang='japan' 表示支持日文和英文，use_angle_cls 开启方向分类
 print("正在加载 PaddleOCR 模型...")
-ocr_engine = PaddleOCR(use_angle_cls=True, lang='japan', show_log=False)
+ocr_engine = PaddleOCR(use_textline_orientation=True, lang='japan')
 
 # === 状态持久化配置 ===
 STATE_FILE = "state.json"
