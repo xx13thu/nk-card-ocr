@@ -202,9 +202,18 @@ def download_task():
                 if len(caption) > 1000: caption = caption[:1000] + "..."
 
                 target_thread_id = TOPIC_MAP.get(en_tag, DEFAULT_TOPIC_ID)
+                
+                # 1. 先推送 PNG (带上完整的 Tag、星级和说明)
                 send_photo_to_telegram(png_url, caption, thread_id=target_thread_id)
                 
+                # 停顿 1-2 秒，防止连续发两条消息太快被 Telegram 接口限流报错
+                time.sleep(1)
+                
+                # 2. 紧接着推送 JPG 作为一条独立的新消息
+                send_photo_to_telegram(jpg_url, caption, thread_id=target_thread_id)
+                
                 start_points[prefix] += 1
+
                 # === 每次找到新卡后保存状态 ===
                 save_state(start_points) 
             else:
