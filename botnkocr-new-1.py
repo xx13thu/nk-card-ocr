@@ -103,79 +103,83 @@ def paddle_ocr(image_url):
         
         # 2. 物理裁剪：保留下方 30%，左右全部保留
         h, w = img.shape[:2]
-        limit_y = int(h * 0.7)  # 从高度 70% 的位置开始，即保留底部的 30%
-        cropped_img = img[limit_y:h, :]  # 宽度方向用 ":" 表示全部保留
+        cropped_img = img[int(h * 0.7):h, :]
         
-        # 3. 放大图像：放大 2 倍
-        enlarged_img = cv2.resize(cropped_img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        # 3. 放大 3 倍并转为灰度
+        enlarged = cv2.resize(cropped_img, (0, 0), fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)
         
-        # 4. 灰度化：转为黑白
-        gray = cv2.cvtColor(enlarged_img, cv2.COLOR_BGR2GRAY)
+        # ==========================================
+        # 构建 3 种不同强度的预处理图像矩阵
+        # ==========================================
+        images_to_try = []
         
-        # 5. 图像锐化 (Sharpening)：极其关键，强化“亮字”与“浅底”之间那一点点微弱的边界
-        kernel = np.array([[-1, -1, -1],
-                           [-1,  9, -1],
-                           [-1, -1, -1]])
-        sharpened = cv2.filter2D(gray, -1, kernel)
+        # [方案 A] 基础灰度 (适用：远藤樱、深色背景、自带阴影)
+        images_to_try.append(gray)
         
-        # 6. 自适应二值化 (Adaptive Thresholding)：拯救低对比度的终极杀手锏
-        # 它不看全局亮度，而是把图像切成无数个小块(blockSize)，只要字比周围一小圈的背景亮一点，就能强行剥离出来。
-        binary = cv2.adaptiveThreshold(
-            sharpened, 
-            255, 
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 
-            31,  # 局部区域大小，必须是奇数。因为图像放大了2倍，这里用 31 或 41 比较合适
-            2    # 微调常数
-        )
+        # [方案 B] 强力伽马压暗 + 拉伸 (适用：海边朱莉、白底白字、极低对比度)
+        # 将非纯白像素呈指数级压暗，剔除浅色皮肤和蕾丝的干扰
+        gamma = 0.3 
+        invGamma = 1.0 / gamma
+        table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+        darkened = cv2.LUT(gray, table)
+        stretched = cv2.normalize(darkened, None, 0, 255, cv2.NORM_MINMAX) # 重新拉伸对比度
+        images_to_try.append(stretched)
         
-        # 7. 颜色反转 (Inversion)：迎合 OCR 模型的喜好
-        # 经过上面的操作，亮字通常会变成纯白(255)，背景变纯黑(0)。
-        # 这里将其反转为“白底黑字”，让 PaddleOCR 发挥最高准确率。
-        enhanced_img = cv2.bitwise_not(binary)
+        # [方案 C] 高斯模糊 + 自适应二值化翻转 (适用：大越ひなの、复杂高频纹理背景)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        binary = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 3)
+        images_to_try.append(cv2.bitwise_not(binary))
         
-        # 将处理后的终极黑白图像 enhanced_img 交给 PaddleOCR
-        result = ocr_engine.ocr(enhanced_img, cls=True)
+        # ==========================================
+        # 循环验证逻辑：只要中奖一次，立刻退出
+        # ==========================================
+        best_tag = "LowConf"
         
-        if not result or result[0] is None:
-            return "LowConf", ""
-
-        texts_en = []
-        blacklist = ['SSR', 'SR', 'UR', 'SUMMER']
-
-        for line in result[0]:
-            box = line[0]
-            text_info = line[1]
-            text = text_info[0]
-            conf = text_info[1]
-
-            # 计算 X 坐标中心点，用于判断字母/单词的左右顺序
-            center_x = sum([p[0] for p in box]) / 4
-
-            if conf < 0.5: 
+        for idx, process_img in enumerate(images_to_try):
+            result = ocr_engine.ocr(process_img, cls=True)
+            if not result or result[0] is None:
                 continue
 
-            text = text.replace(" ", "").strip()
-            if not text:
-                continue
-
-            if re.search(r"[A-Za-z]", text):
-                text = text.replace("l", "I") 
-                clean_en = re.sub(r'[^a-zA-Z0-9]', '', text)
-                if clean_en and clean_en.upper() not in blacklist:
-                    texts_en.append((clean_en, center_x))
-
-        # 整理输出：按 X 坐标排序拼接
-        texts_en = list(dict.fromkeys(texts_en))
-        if texts_en:
-            texts_en.sort(key=lambda item: item[1])
-            sorted_words = [item[0] for item in texts_en]
-            final_texts_en = list(dict.fromkeys(sorted_words))
-            en_tag = "".join(final_texts_en)
-        else:
-            en_tag = "LowConf"
-
-        return en_tag, ""
+            texts_en = []
+            blacklist = ['SSR', 'SR', 'UR', 'SUMMER']
+            
+            for line in result[0]:
+                box = line[0]
+                text = line[1][0]
+                conf = line[1][1]
+                
+                if conf < 0.3: 
+                    continue
+                    
+                text = text.replace(" ", "").strip()
+                if re.search(r"[A-Za-z]", text):
+                    text = text.replace("l", "I")
+                    clean_en = re.sub(r'[^a-zA-Z0-9]', '', text)
+                    if clean_en and clean_en.upper() not in blacklist:
+                        center_x = sum([p[0] for p in box]) / 4
+                        texts_en.append((clean_en, center_x))
+            
+            if texts_en:
+                # 排序拼接提取到的字母
+                texts_en.sort(key=lambda item: item[1])
+                sorted_words = [item[0] for item in texts_en]
+                final_texts_en = list(dict.fromkeys(sorted_words))
+                raw_tag = "".join(final_texts_en)
+                
+                # --- 核心：立刻调用模糊匹配查验字典 ---
+                # 如果这个滤镜提取出来的乱码，能被字典救回来并精准匹配到 TOPIC_MAP 中的某个键
+                matched_tag = fuzzy_match_tag(raw_tag, TOPIC_MAP)
+                
+                if matched_tag in TOPIC_MAP:
+                    print(f"[{image_url}] 在第 {idx+1} 套图像预处理中完美识别: {matched_tag}")
+                    return matched_tag, ""  # 识别成功，直接返回，不再浪费算力测试后续滤镜
+                else:
+                    # 如果这套滤镜也没认全，先暂存最好结果，留给下一个滤镜继续努力
+                    best_tag = matched_tag
+                    
+        # 如果 3 套处理全跑完都没能在字典里找到绝对匹配项，返回最后一次得到的近似值
+        return best_tag, ""
 
     except Exception as e:
         print(f"[{image_url}] 解析发生异常: {e}")
