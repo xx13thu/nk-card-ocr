@@ -1,4 +1,4 @@
-name: Nogikoi Bot Daily Run
+name: NK card Daily Run
 
 on:
   schedule:
