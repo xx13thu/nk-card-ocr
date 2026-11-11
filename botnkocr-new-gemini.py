@@ -156,8 +156,10 @@ def gemini_vision_ocr(image_url):
                 if matches:
                     en_tags.append(JP_TO_EN_MAP[matches[0]])
                 else:
-                    print(f"[{image_url}] 字典匹配失败，未在字典中找到相似项: '{raw_jp_text}'")
-            
+                    safe_tag = re.sub(r'\W+', '', raw_jp_text)
+                    if safe_tag:
+                        en_tags.append(safe_tag)
+          
             if en_tags:
                 en_tags = list(dict.fromkeys(en_tags)) 
                 return en_tags 
