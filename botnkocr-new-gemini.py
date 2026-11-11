@@ -117,11 +117,11 @@ def gemini_vision_ocr(image_url):
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
         # 2. 构造请求发送给 Gemini
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": "提取图片里的乃木坂46成员的日文名字。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。请只输出日文汉字，绝不要包含拼音、说明或其他任何标点符号。"},
+                    {"text": "提取图片里的日文。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。"},
                     {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
                 ]
             }],
@@ -137,8 +137,10 @@ def gemini_vision_ocr(image_url):
             return []
 
         if "candidates" in res_json and len(res_json["candidates"]) > 0:
-            raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
-            raw_text = raw_text.replace("，", ",") 
+            # 遍历所有的 parts，把里面的 text 拼接成一个完整的字符串
+            parts_list = res_json["candidates"][0]["content"]["parts"]
+            raw_text = "".join([part.get("text", "") for part in parts_list]).strip()            
+            raw_text = raw_text.replace("，", ",")
             
             # === 新增调试打印：看看 Gemini 到底输出了什么 ===
             print(f"[{image_url}] Gemini 原始返回: '{raw_text}'")
