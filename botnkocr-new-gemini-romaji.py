@@ -101,7 +101,7 @@ def gemini_vision_ocr(image_url):
             cropped_img.save(buffered, format="JPEG")
             img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
             payload = {
                 "contents": [{
                     "parts": [
