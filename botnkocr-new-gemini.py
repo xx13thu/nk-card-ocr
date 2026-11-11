@@ -228,8 +228,8 @@ def download_task():
             else:
                 # 依然没找到，重试次数加 1
                 gaps[gap_str] += 1
-                if gaps[gap_str] >= 10:
-                    print(f"[{prefix}] 序号 {gap_num} 连续 10 次未能找回，确认为永久空号。")
+                if gaps[gap_str] >= 20:
+                    print(f"[{prefix}] 序号 {gap_num} 连续 20 次未能找回，确认为永久空号。")
                     del gaps[gap_str]
                 save_state(start_points)
             time.sleep(1)
