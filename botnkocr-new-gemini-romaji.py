@@ -181,7 +181,7 @@ def process_and_send_card(prefix, png_url, jpg_url):
     else:
         tags_str = " ".join([f"#{tag}" for tag in en_tags])
         caption_png = f"{tags_str}\n\n{star}\n\n{png_url}"
-        caption_jpg = f"{tags_str}\n\n{star}\n\n{png_url}"
+        caption_jpg = f"{tags_str}\n\n{star}\n\n{jpg_url}"
         
         target_thread_ids = []
         for tag in en_tags:
