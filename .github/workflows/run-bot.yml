@@ -41,5 +41,5 @@ jobs:
         # 这一步非常关键：它会把机器人更新的 start_points 保存回你的代码库，明天再跑就不会重复发图了
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
-          commit_message: "chore: update scanner state.json"
-          file_pattern: 'state.json'
+          commit_message: "chore: update scanner scan_state.json"
+          file_pattern: 'scan_state.json'
