@@ -6,6 +6,8 @@ from datetime import datetime
 import time
 import difflib
 import os
+import io
+from PIL import Image
 
 # ==========================
 # 1. 基础配置区域
@@ -30,11 +32,10 @@ JP_TO_EN_MAP = {
     "奥田いろは": "OkudaIroha", "川﨑桜": "KawasakiSakura", "菅原咲月": "SugawaraSatsuki", 
     "冨里奈央": "TomisatoNao", "中西アルノ": "NakanishiAruno",
     
-    "愛宕ここね": "AtagoKokone", "大越ひなの": "OkoshiHinano", "大津怜奈": "OzuReina", 
-    "海邊朱莉": "KaibeAkari", "川端日菜": "KawabataHina", "鈴木悠菜": "SuzukiYuuna", 
-    "瀬戸口みつき": "SetoguchiMitsuki", "長島理桜": "NagashimaRio", "増田未倫": "MasudaMirine", 
-    "森平うるみ": "MorihiraUrumi", "矢田萌華": "YadaMoeka",
-    "海边朱莉": "KaibeAkari", "川崎桜": "KawasakiSakura"
+    "愛宕心響": "AtagoKokone", "大越ひなの": "OkoshiHinano", "小津玲奈": "OzuReina", 
+    "海邊朱莉": "KaibeAkari", "川端晃菜": "KawabataHina", "鈴木佑捺": "SuzukiYuuna", 
+    "瀬戸口心月": "SetoguchiMitsuki", "長嶋凛桜": "NagashimaRio", "増田三莉音": "MasudaMirine", 
+    "森平麗心": "MorihiraUrumi", "矢田萌華": "YadaMoeka",
 }
 
 TOPIC_MAP = {
@@ -100,15 +101,27 @@ def download_image(url):
 
 def gemini_vision_ocr(image_url):
     try:
+        # 1. 获取图片
         resp = requests.get(image_url, timeout=15)
         resp.raise_for_status()
-        img_b64 = base64.b64encode(resp.content).decode("utf-8")
+        
+        # === 核心修复：使用轻量级 Pillow 裁剪底部 30% ===
+        img = Image.open(io.BytesIO(resp.content))
+        w, h = img.size
+        # 裁剪坐标 (left, upper, right, lower)
+        cropped_img = img.crop((0, int(h * 0.7), w, h))
+        
+        # 将裁剪后的大字图片转为 Base64
+        buffered = io.BytesIO()
+        cropped_img.save(buffered, format="JPEG")
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
+        # 2. 构造请求发送给 Gemini
         api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": "提取图片底部的乃木坂46成员的日文名字。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。只输出日文汉字即可。"},
+                    {"text": "提取图片里的乃木坂46成员的日文名字。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。请只输出日文汉字，绝不要包含拼音、说明或其他任何标点符号。"},
                     {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
                 ]
             }],
@@ -118,9 +131,18 @@ def gemini_vision_ocr(image_url):
         res = requests.post(api_url, json=payload, timeout=30)
         res_json = res.json()
         
+        # 拦截并打印 API 错误（如额度超限、Key失效）
+        if "error" in res_json:
+            print(f"[API 报错] {res_json['error']['message']}")
+            return []
+
         if "candidates" in res_json and len(res_json["candidates"]) > 0:
             raw_text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
             raw_text = raw_text.replace("，", ",") 
+            
+            # === 新增调试打印：看看 Gemini 到底输出了什么 ===
+            print(f"[{image_url}] Gemini 原始返回: '{raw_text}'")
+            
             names_list = [name.strip().replace("\n", "").replace(" ", "") for name in raw_text.split(",")]
             
             en_tags = []
@@ -131,9 +153,11 @@ def gemini_vision_ocr(image_url):
                 matches = difflib.get_close_matches(raw_jp_text, valid_jp_keys, n=1, cutoff=0.3)
                 if matches:
                     en_tags.append(JP_TO_EN_MAP[matches[0]])
+                else:
+                    print(f"[{image_url}] 字典匹配失败，未在字典中找到相似项: '{raw_jp_text}'")
             
             if en_tags:
-                en_tags = list(dict.fromkeys(en_tags)) # 标签去重
+                en_tags = list(dict.fromkeys(en_tags)) 
                 return en_tags 
                 
         return []
