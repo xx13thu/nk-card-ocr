@@ -61,7 +61,7 @@ def save_state(state_dict):
         json.dump(state_dict, f, indent=4)
 
 start_points = load_state()
-max_invalid = 20
+max_invalid = 30
 
 # ==========================
 # 2. 核心功能函数
