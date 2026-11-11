@@ -37,7 +37,7 @@ jobs:
         run: |
           python botnkocr-new-gemini-romaji.py
 
-      - name: Commit state.json back to Repo
+      - name: Commit scan_state.json back to Repo
         # 这一步非常关键：它会把机器人更新的 start_points 保存回你的代码库，明天再跑就不会重复发图了
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
