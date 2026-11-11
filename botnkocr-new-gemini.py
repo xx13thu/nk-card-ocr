@@ -100,75 +100,89 @@ def download_image(url):
         return False
 
 def gemini_vision_ocr(image_url):
-    try:
-        # 1. 获取图片
-        resp = requests.get(image_url, timeout=15)
-        resp.raise_for_status()
-        
-        # === 核心修复：使用轻量级 Pillow 裁剪底部 30% ===
-        img = Image.open(io.BytesIO(resp.content))
-        w, h = img.size
-        # 裁剪坐标 (left, upper, right, lower)
-        cropped_img = img.crop((0, int(h * 0.7), w, h))
-        
-        # 将裁剪后的大字图片转为 Base64
-        buffered = io.BytesIO()
-        cropped_img.save(buffered, format="JPEG")
-        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    # 设定最大重试次数
+    max_retries = 3 
+    
+    for attempt in range(max_retries):
+        try:
+            resp = requests.get(image_url, timeout=15)
+            resp.raise_for_status()
+            
+            # 裁剪底部 30%
+            img = Image.open(io.BytesIO(resp.content))
+            w, h = img.size
+            cropped_img = img.crop((0, int(h * 0.7), w, h))
+            
+            buffered = io.BytesIO()
+            cropped_img.save(buffered, format="JPEG")
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-        # 2. 构造请求发送给 Gemini
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [{
-                "parts": [
-                    {"text": "提取图片里的日文。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。"},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
-                ]
-            }],
-            "generationConfig": {"temperature": 0.0}
-        }
+            # 请求 API
+            api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{
+                    "parts": [
+                        {"text": "提取图片里的日文。如果图片上有多个名字，请把它们都提取出来，并用英文逗号 ',' 隔开。"},
+                        {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
+                    ]
+                }],
+                "generationConfig": {"temperature": 0.0}
+            }
 
-        res = requests.post(api_url, json=payload, timeout=30)
-        res_json = res.json()
-        
-        # 拦截并打印 API 错误（如额度超限、Key失效）
-        if "error" in res_json:
-            print(f"[API 报错] {res_json['error']['message']}")
-            return []
-
-        if "candidates" in res_json and len(res_json["candidates"]) > 0:
-            # 遍历所有的 parts，把里面的 text 拼接成一个完整的字符串
-            parts_list = res_json["candidates"][0]["content"]["parts"]
-            raw_text = "".join([part.get("text", "") for part in parts_list]).strip()            
-            raw_text = raw_text.replace("，", ",")
+            res = requests.post(api_url, json=payload, timeout=30)
+            res_json = res.json()
             
-            # === 新增调试打印：看看 Gemini 到底输出了什么 ===
-            print(f"[{image_url}] Gemini 原始返回: '{raw_text}'")
-            
-            names_list = [name.strip().replace("\n", "").replace(" ", "") for name in raw_text.split(",")]
-            
-            en_tags = []
-            valid_jp_keys = list(JP_TO_EN_MAP.keys())
-            
-            for raw_jp_text in names_list:
-                if not raw_jp_text: continue
-                matches = difflib.get_close_matches(raw_jp_text, valid_jp_keys, n=1, cutoff=0.3)
-                if matches:
-                    en_tags.append(JP_TO_EN_MAP[matches[0]])
-                else:
-                    safe_tag = re.sub(r'\W+', '', raw_jp_text)
-                    if safe_tag:
-                        en_tags.append(safe_tag)
-          
-            if en_tags:
-                en_tags = list(dict.fromkeys(en_tags)) 
-                return en_tags 
+            # 拦截官方返回的错误提示
+            if "error" in res_json:
+                error_msg = res_json['error'].get('message', '未知错误')
+                print(f"[{image_url}] 第 {attempt + 1} 次请求报错: {error_msg}")
                 
-        return []
+                # 如果是服务器超载 (high demand / 503 / 429)，进行延时重试
+                if "high demand" in error_msg.lower() or res_json['error'].get('code') in [429, 503]:
+                    if attempt < max_retries - 1:
+                        print("检测到服务器拥挤，代码暂停 10 秒后重试...")
+                        time.sleep(10)
+                        continue # 跳到下一次循环重试
+                
+                # 如果是配额耗尽等其他致命错误，直接返回空
+                return []
+
+            if "candidates" in res_json and len(res_json["candidates"]) > 0:
+                # 遍历所有的 parts，把里面的 text 拼接成一个完整的字符串
+                parts_list = res_json["candidates"][0]["content"]["parts"]
+                raw_text = "".join([part.get("text", "") for part in parts_list]).strip()            
+                raw_text = raw_text.replace("，", ",")
+                
+                # === 新增调试打印：看看 Gemini 到底输出了什么 ===
+                print(f"[{image_url}] Gemini 原始返回: '{raw_text}'")
+                
+                names_list = [name.strip().replace("\n", "").replace(" ", "") for name in raw_text.split(",")]
+                
+                en_tags = []
+                valid_jp_keys = list(JP_TO_EN_MAP.keys())
+                
+                for raw_jp_text in names_list:
+                    if not raw_jp_text: continue
+                    matches = difflib.get_close_matches(raw_jp_text, valid_jp_keys, n=1, cutoff=0.3)
+                    if matches:
+                        en_tags.append(JP_TO_EN_MAP[matches[0]])
+                    else:
+                        safe_tag = re.sub(r'\W+', '', raw_jp_text)
+                        if safe_tag:
+                            en_tags.append(safe_tag)
+              
+                if en_tags:
+                    en_tags = list(dict.fromkeys(en_tags)) 
+                    return en_tags 
+                    
+            return []
         
-    except Exception as e:
-        print(f"[{image_url}] Gemini 解析发生异常: {e}")
-        return []
+        except Exception as e:
+            print(f"[{image_url}] 第 {attempt + 1} 次执行代码发生异常: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(10)
+            else:
+                return []
 
 def process_and_send_card(prefix, png_url, jpg_url):
     """
