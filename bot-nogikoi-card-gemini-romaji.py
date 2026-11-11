@@ -174,14 +174,14 @@ def process_and_send_card(prefix, png_url, jpg_url):
     en_tags = gemini_vision_ocr(jpg_url)
     
     if not en_tags:
-        caption = f"#LowConf\n\n{star}\n\n{png_url}"
-        send_photo_to_telegram(png_url, caption[:1000], thread_id=DEFAULT_TOPIC_ID)
+        send_photo_to_telegram(png_url, f"#LowConf\n\n{star}\n\n{png_url}", thread_id=DEFAULT_TOPIC_ID)
         # 失败保底时，把 JPG 顺便发出来帮你认卡
         time.sleep(1)
-        send_photo_to_telegram(jpg_url, f"#LowConf (JPG)\n\n{jpg_url}", thread_id=DEFAULT_TOPIC_ID)
+        send_photo_to_telegram(jpg_url, f"#LowConf\n\n{star}\n\n{jpg_url}", thread_id=DEFAULT_TOPIC_ID)
     else:
         tags_str = " ".join([f"#{tag}" for tag in en_tags])
-        caption = f"{tags_str}\n\n{star}\n\n{png_url}"
+        caption_png = f"{tags_str}\n\n{star}\n\n{png_url}"
+        caption_jpg = f"{tags_str}\n\n{star}\n\n{png_url}"
         
         target_thread_ids = []
         for tag in en_tags:
@@ -190,9 +190,9 @@ def process_and_send_card(prefix, png_url, jpg_url):
                 target_thread_ids.append(tid)
                 
         for tid in target_thread_ids:
-            send_photo_to_telegram(png_url, caption[:1000], thread_id=tid)
+            send_photo_to_telegram(png_url, caption_png[:1000], thread_id=tid)
             time.sleep(0.5)
-            send_photo_to_telegram(jpg_url, caption[:1000], thread_id=tid)
+            send_photo_to_telegram(jpg_url, caption_jpg[:1000], thread_id=tid)
             time.sleep(1) 
 
 # ==========================
