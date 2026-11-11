@@ -35,7 +35,7 @@ jobs:
           CHANNEL_CHAT_ID: ${{ secrets.CHANNEL_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}          
         run: |
-          python botnkocr-new-gemini.py
+          python botnkocr-new-gemini-romaji.py
 
       - name: Commit state.json back to Repo
         # 这一步非常关键：它会把机器人更新的 start_points 保存回你的代码库，明天再跑就不会重复发图了
