@@ -15,12 +15,12 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10' # PaddleOCR 在 3.10 运行极佳
 
@@ -39,7 +39,7 @@ jobs:
 
       - name: Commit state.json back to Repo
         # 这一步非常关键：它会把机器人更新的 start_points 保存回你的代码库，明天再跑就不会重复发图了
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "chore: update scanner state.json"
           file_pattern: 'state.json'
