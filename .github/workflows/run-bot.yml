@@ -2,9 +2,9 @@ name: NK card Daily Run
 
 on:
   schedule:
-    # 每天 UTC 时间 22:00 运行一次 (北京/东京时间上午 6:00/7:00) 
+    # 每天 UTC 时间 (东京时间+9) 
     # 可以根据你查卡的需求自定义 cron 表达式
-    - cron: '0 22 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch: # 允许你随时在 GitHub 网页上点按钮手动运行
 
 jobs:
