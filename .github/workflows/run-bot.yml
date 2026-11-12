@@ -4,7 +4,7 @@ on:
   schedule:
     # 每天 UTC 时间 (东京时间+9) 
     # 可以根据你查卡的需求自定义 cron 表达式
-    - cron: '0 6 * * *'
+    - cron: '0 4 * * *'
   workflow_dispatch: # 允许你随时在 GitHub 网页上点按钮手动运行
 
 jobs:
